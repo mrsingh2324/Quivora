@@ -1,0 +1,22 @@
+{
+  "name": "quivora",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "api",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:admin": "npm --workspace apps/web-admin run dev",
+    "dev:player": "npm --workspace apps/web-player run dev",
+    "dev:api": "npm --workspace api run dev",
+    "dev:ai": "npm --workspace services/ai-orchestrator run dev",
+    "build:admin": "npm --workspace apps/web-admin run build",
+    "build:player": "npm --workspace apps/web-player run build",
+    "test": "node --test",
+    "start:api": "npm --workspace api run start",
+    "start:ai": "npm --workspace services/ai-orchestrator run start"
+  }
+}

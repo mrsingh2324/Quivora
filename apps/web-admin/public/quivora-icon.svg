@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Quivora">
+  <defs>
+    <linearGradient id="qv-bg" x1="18" x2="110" y1="16" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f766e"/>
+      <stop offset="0.54" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="qv-mark" x1="36" x2="92" y1="32" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e0f2fe"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#07125a"/>
+  <path fill="url(#qv-bg)" d="M16 36c0-11 9-20 20-20h56c11 0 20 9 20 20v56c0 11-9 20-20 20H36c-11 0-20-9-20-20V36Z"/>
+  <path fill="#07125a" fill-opacity=".2" d="M28 42c0-8 6-14 14-14h44c8 0 14 6 14 14v44c0 8-6 14-14 14H42c-8 0-14-6-14-14V42Z"/>
+  <path fill="url(#qv-mark)" d="M64 27c-22 0-39 16-39 38s17 38 39 38c7 0 13-2 19-5l9 9c3 3 8 3 11 0s3-8 0-11l-8-8c5-7 8-15 8-23 0-22-17-38-39-38Zm0 17c12 0 21 9 21 21 0 4-1 8-3 11L70 64c-3-3-8-3-11 0s-3 8 0 11l11 11c-2 1-4 1-6 1-12 0-21-9-21-22s9-21 21-21Z"/>
+  <path fill="#ffffff" fill-opacity=".45" d="M38 24h31c-21 8-33 22-37 43V30c0-3 3-6 6-6Z"/>
+</svg>

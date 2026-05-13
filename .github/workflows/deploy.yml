@@ -1,0 +1,221 @@
+name: Build & Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: ${{ secrets.GCP_REGION }}
+  REGISTRY: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/quivora
+
+# Keyless GCP auth via Workload Identity Federation — no long-lived keys in GitHub
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ── Detect which services changed ─────────────────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      ai: ${{ steps.filter.outputs.ai }}
+      web-admin: ${{ steps.filter.outputs.web-admin }}
+      web-player: ${{ steps.filter.outputs.web-player }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'api/**'
+            ai:
+              - 'services/ai-orchestrator/**'
+            web-admin:
+              - 'apps/web-admin/**'
+            web-player:
+              - 'apps/web-player/**'
+
+  # ── Shared GCP auth step (reused by all deploy jobs) ──────────────────────
+  auth:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.api == 'true' ||
+      needs.changes.outputs.ai == 'true' ||
+      needs.changes.outputs.web-admin == 'true' ||
+      needs.changes.outputs.web-player == 'true'
+    outputs:
+      # Pass the token downstream so each job doesn't re-authenticate
+      access_token: ${{ steps.auth.outputs.access_token }}
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+  # ── API ────────────────────────────────────────────────────────────────────
+  deploy-api:
+    runs-on: ubuntu-latest
+    needs: [changes, auth]
+    if: needs.changes.outputs.api == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push API image
+        run: |
+          docker build \
+            --tag ${{ env.REGISTRY }}/api:${{ github.sha }} \
+            --tag ${{ env.REGISTRY }}/api:latest \
+            ./api
+          docker push ${{ env.REGISTRY }}/api:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/api:latest
+
+      - name: Deploy API to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: quivora-api
+          region: ${{ env.REGION }}
+          image: ${{ env.REGISTRY }}/api:${{ github.sha }}
+          flags: --allow-unauthenticated --port=4000 --min-instances=1
+          env_vars: |
+            NODE_ENV=production
+            PORT=4000
+            MONGODB_URI=${{ secrets.MONGODB_URI }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            CLIENT_URL=${{ secrets.CLIENT_URL }}
+            API_BASE_URL=${{ secrets.API_BASE_URL }}
+            AI_SERVICE_URL=${{ secrets.AI_SERVICE_URL }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            GH_OAUTH_CLIENT_ID=${{ secrets.GH_OAUTH_CLIENT_ID }}
+            GH_OAUTH_CLIENT_SECRET=${{ secrets.GH_OAUTH_CLIENT_SECRET }}
+            REDIS_URL=${{ secrets.REDIS_URL }}
+
+  # ── AI Orchestrator ────────────────────────────────────────────────────────
+  deploy-ai:
+    runs-on: ubuntu-latest
+    needs: [changes, auth]
+    if: needs.changes.outputs.ai == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push AI image
+        run: |
+          docker build \
+            --tag ${{ env.REGISTRY }}/ai-orchestrator:${{ github.sha }} \
+            --tag ${{ env.REGISTRY }}/ai-orchestrator:latest \
+            ./services/ai-orchestrator
+          docker push ${{ env.REGISTRY }}/ai-orchestrator:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/ai-orchestrator:latest
+
+      - name: Deploy AI Orchestrator to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: quivora-ai
+          region: ${{ env.REGION }}
+          image: ${{ env.REGISTRY }}/ai-orchestrator:${{ github.sha }}
+          flags: --no-allow-unauthenticated --port=4100
+          env_vars: |
+            NODE_ENV=production
+            PORT=4100
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}
+
+  # ── Web Admin ──────────────────────────────────────────────────────────────
+  deploy-web-admin:
+    runs-on: ubuntu-latest
+    needs: [changes, auth]
+    if: needs.changes.outputs.web-admin == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push web-admin image
+        run: |
+          docker build \
+            --build-arg VITE_API_URL=${{ secrets.VITE_API_URL }} \
+            --build-arg VITE_SOCKET_URL=${{ secrets.VITE_SOCKET_URL }} \
+            --build-arg VITE_PLAYER_URL=${{ secrets.VITE_PLAYER_URL }} \
+            --tag ${{ env.REGISTRY }}/web-admin:${{ github.sha }} \
+            --tag ${{ env.REGISTRY }}/web-admin:latest \
+            ./apps/web-admin
+          docker push ${{ env.REGISTRY }}/web-admin:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/web-admin:latest
+
+      - name: Deploy web-admin to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: quivora-web-admin
+          region: ${{ env.REGION }}
+          image: ${{ env.REGISTRY }}/web-admin:${{ github.sha }}
+          flags: --allow-unauthenticated --port=8080
+
+  # ── Web Player ─────────────────────────────────────────────────────────────
+  deploy-web-player:
+    runs-on: ubuntu-latest
+    needs: [changes, auth]
+    if: needs.changes.outputs.web-player == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push web-player image
+        run: |
+          docker build \
+            --build-arg VITE_API_URL=${{ secrets.VITE_API_URL }} \
+            --build-arg VITE_SOCKET_URL=${{ secrets.VITE_SOCKET_URL }} \
+            --tag ${{ env.REGISTRY }}/web-player:${{ github.sha }} \
+            --tag ${{ env.REGISTRY }}/web-player:latest \
+            ./apps/web-player
+          docker push ${{ env.REGISTRY }}/web-player:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/web-player:latest
+
+      - name: Deploy web-player to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: quivora-web-player
+          region: ${{ env.REGION }}
+          image: ${{ env.REGISTRY }}/web-player:${{ github.sha }}
+          flags: --allow-unauthenticated --port=8080

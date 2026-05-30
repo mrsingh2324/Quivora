@@ -89,6 +89,8 @@ Do not commit real `.env` files or API keys.
 npm install
 ```
 
+Run installation from the repository root so all npm workspaces are installed together.
+
 ## Run Locally
 
 The easiest way to run all services:
